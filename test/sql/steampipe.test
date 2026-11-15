@@ -1,0 +1,358 @@
+# name: test/sql/steampipe.test
+# description: Host the in-repo fixture plugin (built with steampipe-plugin-sdk) from a local path
+# group: [steampipe]
+
+require vgi
+
+require-env STEAMPIPE_WORKER
+
+require-env STEAMPIPE_FIXTURE_PLUGIN
+
+# Without plugins the catalog holds only the worker's own functions.
+statement ok
+ATTACH 'steampipe' AS bare (TYPE vgi, LOCATION '{STEAMPIPE_WORKER}');
+
+query I
+SELECT count(*) FROM bare.main.plugin;
+----
+0
+
+query I
+SELECT count(*) FROM duckdb_schemas() WHERE database_name = 'bare' AND schema_name NOT IN ('main', 'information_schema', 'pg_catalog');
+----
+0
+
+statement error
+SELECT count(*) FROM bare.main.scan('fixture', 'fixture_item');
+----
+<REGEX>:.*no Steampipe plugins are attached.*
+
+statement ok
+DETACH bare;
+
+statement ok
+ATTACH 'steampipe' AS sp (TYPE vgi, LOCATION '{STEAMPIPE_WORKER}',
+    plugins 'fixture={STEAMPIPE_FIXTURE_PLUGIN}, fx2={STEAMPIPE_FIXTURE_PLUGIN}',
+    config 'fixture {
+      item_count = 3000
+      greeting   = "Hi"
+    }');
+
+# ------------------------------------------------------------------ discovery
+
+query TT
+SELECT schema_name, table_name FROM duckdb_tables() WHERE database_name = 'sp' AND schema_name <> 'main' ORDER BY ALL;
+----
+fixture	fixture_greeting
+fixture	fixture_item
+fixture	fixture_lookup
+fixture	fixture_whoami
+fx2	fixture_greeting
+fx2	fixture_item
+fx2	fixture_lookup
+fx2	fixture_whoami
+
+query TT
+SELECT column_name, data_type FROM duckdb_columns() WHERE database_name = 'sp' AND schema_name = 'fixture' AND table_name = 'fixture_item' ORDER BY column_index;
+----
+id	BIGINT
+name	VARCHAR
+category	VARCHAR
+price	DOUBLE
+active	BOOLEAN
+created	TIMESTAMP WITH TIME ZONE
+tags	JSON
+attrs	JSON
+ip	VARCHAR
+network	VARCHAR
+note	VARCHAR
+sp_connection_name	VARCHAR
+sp_ctx	JSON
+
+query TTTIT
+SELECT schema_name, plugin, sdk_version, table_count, image_digest FROM sp.main.plugin ORDER BY schema_name;
+----
+fixture	fixture	5.14.0	4	NULL
+fx2	fixture	5.14.0	4	NULL
+
+query TTTT
+SELECT table_name, required_filters, get_key_columns, list_key_columns FROM sp.main.plugin_table WHERE schema_name = 'fixture' ORDER BY table_name;
+----
+fixture_greeting	name	[]	[name]
+fixture_item	NULL	[]	[category, id]
+fixture_lookup	id	[id]	[id]
+fixture_whoami	NULL	[]	[]
+
+query TTTTT
+SELECT table_name, column_name, call, require, array_to_string(operators, ' ') FROM sp.main.plugin_key_column
+WHERE schema_name = 'fixture' AND column_name <> 'sp_connection_name' ORDER BY ALL;
+----
+fixture_greeting	name	list	required	=
+fixture_item	category	list	optional	=
+fixture_item	id	list	optional	= > >= < <=
+fixture_lookup	id	get	required	=
+fixture_lookup	id	list	required	=
+
+# ------------------------------------------------------------------ types
+
+query ITTRTTTTTTT
+SELECT id, name, category, price, active, created, tags, attrs, ip, network, note
+FROM sp.fixture.fixture_item WHERE id IN (1, 10) ORDER BY id;
+----
+1	item-0001	software	1.5	false	2024-01-01 01:00:00+00	["software","t1"]	{"even":false,"rank":1}	10.0.0.1	10.1.0.0/16	NULL
+10	item-0010	software	10.5	true	2024-01-01 10:00:00+00	["software","t0"]	{"even":true,"rank":3}	10.0.0.10	10.10.0.0/16	milestone 10
+
+statement ok
+LOAD json;
+
+query T
+SELECT tags->>0 FROM sp.fixture.fixture_item WHERE id = 2;
+----
+services
+
+# ------------------------------------------------------------------ multi-batch scans
+
+query III
+SELECT count(*), sum(id), count(DISTINCT id) FROM sp.fixture.fixture_item;
+----
+3000	4501500	3000
+
+query I
+SELECT count(*) FROM sp.fixture.fixture_item LIMIT 10;
+----
+3000
+
+query I
+SELECT count(*) FROM (SELECT * FROM sp.fixture.fixture_item LIMIT 7);
+----
+7
+
+# ------------------------------------------------------------------ filters (pushed as quals, then applied exactly)
+
+query I
+SELECT count(*) FROM sp.fixture.fixture_item WHERE category = 'software' AND id >= 10 AND active;
+----
+499
+
+query I
+SELECT count(*) FROM sp.fixture.fixture_item WHERE id > 100 AND id <= 200;
+----
+100
+
+query I
+SELECT count(*) FROM sp.fixture.fixture_item WHERE category IN ('software', 'services') AND price < 10;
+----
+200
+
+# Not key columns: filtered by the worker only.
+query I
+SELECT count(*) FROM sp.fixture.fixture_item WHERE note IS NOT NULL;
+----
+300
+
+query I
+SELECT count(*) FROM sp.fixture.fixture_item WHERE note IS NULL AND price = 1.5;
+----
+30
+
+query I
+SELECT count(*) FROM sp.fixture.fixture_item WHERE name LIKE '%1%';
+----
+1542
+
+query I
+SELECT count(*) FROM sp.fixture.fixture_item WHERE name LIKE 'item-001%';
+----
+10
+
+query I
+SELECT count(*) FROM sp.fixture.fixture_item WHERE created > TIMESTAMPTZ '2024-01-01 10:00:00+00';
+----
+2990
+
+query I
+SELECT count(*) FROM sp.fixture.fixture_item WHERE created BETWEEN TIMESTAMPTZ '2024-01-01 10:00:00+00' AND TIMESTAMPTZ '2024-01-01 12:00:00+00' AND name LIKE 'item-%';
+----
+3
+
+query I
+SELECT count(*) FROM sp.fixture.fixture_item WHERE id = 3 OR id = 4;
+----
+2
+
+query I
+SELECT count(*) FROM sp.fixture.fixture_item WHERE category = 'nothing';
+----
+0
+
+# A column the query filters on but does not select.
+query T
+SELECT name FROM sp.fixture.fixture_item WHERE id = 42;
+----
+item-0042
+
+# ------------------------------------------------------------------ required key columns
+
+statement error
+SELECT * FROM sp.fixture.fixture_greeting;
+----
+<REGEX>:.*name.*
+
+query TT
+SELECT name, message FROM sp.fixture.fixture_greeting WHERE name = 'Ada';
+----
+Ada	Hi, Ada!
+
+query T
+SELECT message FROM sp.fixture.fixture_greeting WHERE name IN ('Ada', 'Bo') ORDER BY 1;
+----
+Hi, Ada!
+Hi, Bo!
+
+# id is required by both the Get and the List call.
+statement error
+SELECT * FROM sp.fixture.fixture_lookup;
+----
+<REGEX>:.*id.*
+
+query IT
+SELECT id, name FROM sp.fixture.fixture_lookup WHERE id = 7;
+----
+7	item-0007
+
+query I
+SELECT id FROM sp.fixture.fixture_lookup WHERE id IN (3, 9, 4000) ORDER BY id;
+----
+3
+9
+
+query I
+SELECT count(*) FROM sp.fixture.fixture_lookup WHERE id = 5000000;
+----
+0
+
+# ------------------------------------------------------------------ scan() and max_rows (plugin limit pushdown)
+
+query I
+SELECT count(*) FROM sp.main.scan('fixture', 'fixture_item', max_rows := 25);
+----
+25
+
+query T
+SELECT message FROM sp.main.scan('fixture', 'fixture_greeting') WHERE name = 'Zed';
+----
+Hi, Zed!
+
+statement error
+SELECT * FROM sp.main.scan('fixture', 'fixture_greeting');
+----
+<REGEX>:.*needs a WHERE filter on name.*
+
+statement error
+SELECT * FROM sp.main.scan('fixture', 'no_such_table');
+----
+<REGEX>:.*has no table "no_such_table".*
+
+statement error
+SELECT * FROM sp.main.scan('nope', 'fixture_item');
+----
+<REGEX>:.*no plugin schema "nope".*
+
+# ------------------------------------------------------------------ credentials from secrets
+
+# The second schema has no ATTACH config: the plugin's defaults apply.
+query I
+SELECT count(*) FROM sp.fx2.fixture_item;
+----
+25
+
+query TT
+SELECT has_token, token_sha256 FROM sp.fixture.fixture_whoami;
+----
+false	NULL
+
+statement ok
+CREATE SECRET sp_fixture (TYPE steampipe, PLUGIN 'fixture', CONFIG 'api_token = "s3cret-token"', SCOPE 'steampipe://fixture');
+
+query TT
+SELECT has_token, token_sha256 = sha256('s3cret-token') FROM sp.fixture.fixture_whoami;
+----
+true	true
+
+# The secret's attributes are merged over the ATTACH config.
+query T
+SELECT message FROM sp.fixture.fixture_greeting WHERE name = 'Ada';
+----
+Hi, Ada!
+
+# Scoped to steampipe://fixture: fx2 does not see it.
+query T
+SELECT has_token FROM sp.fx2.fixture_whoami;
+----
+false
+
+# JSON config; overrides an ATTACH attribute.
+statement ok
+CREATE SECRET sp_fx2 (TYPE steampipe, PLUGIN 'fx2', CONFIG '{"api_token": "other", "greeting": "Yo", "item_count": 3}', SCOPE 'steampipe://fx2');
+
+query TTI
+SELECT (SELECT token_sha256 = sha256('other') FROM sp.fx2.fixture_whoami),
+       (SELECT message FROM sp.fx2.fixture_greeting WHERE name = 'Bo'),
+       (SELECT count(*) FROM sp.fx2.fixture_item);
+----
+true	Yo, Bo!	3
+
+# A secret naming another plugin is ignored even when its scope matches.
+statement ok
+CREATE OR REPLACE SECRET sp_fx2 (TYPE steampipe, PLUGIN 'aws', CONFIG 'api_token = "wrong"', SCOPE 'steampipe://fx2');
+
+query T
+SELECT has_token FROM sp.fx2.fixture_whoami;
+----
+false
+
+# Secret values are redacted.
+query T
+SELECT secret_string LIKE '%s3cret-token%' FROM duckdb_secrets() WHERE name = 'sp_fixture';
+----
+false
+
+statement ok
+DROP SECRET sp_fixture;
+
+# An invalid config surfaces when a query uses it.
+statement ok
+CREATE SECRET bad_cfg (TYPE steampipe, PLUGIN 'fixture', CONFIG 'api_token = ', SCOPE 'steampipe://fixture');
+
+statement error
+SELECT * FROM sp.fixture.fixture_whoami;
+----
+<REGEX>:.*not valid HCL.*
+
+statement ok
+DROP SECRET bad_cfg;
+
+statement ok
+DROP SECRET sp_fx2;
+
+# ------------------------------------------------------------------ ATTACH errors
+
+statement error
+ATTACH 'steampipe' AS broken (TYPE vgi, LOCATION '{STEAMPIPE_WORKER}', plugins 'main={STEAMPIPE_FIXTURE_PLUGIN}');
+----
+<REGEX>:.*reserved.*
+
+statement error
+ATTACH 'steampipe' AS broken (TYPE vgi, LOCATION '{STEAMPIPE_WORKER}', plugins '/no/such/steampipe-plugin-x.plugin');
+----
+<REGEX>:.*no such file.*
+
+statement error
+ATTACH 'steampipe' AS broken (TYPE vgi, LOCATION '{STEAMPIPE_WORKER}', plugins 'fixture={STEAMPIPE_FIXTURE_PLUGIN}', config 'other { a = 1 }');
+----
+<REGEX>:.*not a schema in the plugins option.*
+
+statement error
+ATTACH 'steampipe' AS broken (TYPE vgi, LOCATION '{STEAMPIPE_WORKER}', plugins 'fixture={STEAMPIPE_FIXTURE_PLUGIN}', config 'fixture { item_count = "many" }');
+----
+<REGEX>:.*rejected its connection config.*

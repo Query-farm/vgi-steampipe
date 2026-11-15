@@ -1,0 +1,26 @@
+# Private graders for the public vgi.agent_test_tasks in the worker's catalog metadata.
+# `vgi-lint lint --ai` runs an agent on each prompt and grades it with reference_sql.
+# See https://github.com/Query-farm/vgi-lint-check (VGI920).
+# The linter launches the worker with --plugins fixture=bin/steampipe-plugin-fixture
+# (vgi-lint.toml), so these answers are over the in-repo fixture plugin.
+tasks:
+  - name: attached_plugin_count
+    reference_sql: SELECT count(*) AS plugins FROM steampipe.main.plugin
+  - name: required_filter_tables
+    reference_sql: SELECT count(*) AS tables FROM steampipe.main.plugin_table WHERE required_filters IS NOT NULL
+  - name: pushable_columns
+    reference_sql: >-
+      SELECT DISTINCT column_name FROM steampipe.main.plugin_key_column
+      WHERE table_name = 'fixture_item' AND column_name <> 'sp_connection_name' ORDER BY column_name
+  - name: items_by_category
+    reference_sql: >-
+      SELECT category, count(*) AS items FROM steampipe.main.scan('fixture', 'fixture_item')
+      WHERE id <= 30 GROUP BY category ORDER BY category
+  - name: expensive_software
+    reference_sql: SELECT count(*) AS items FROM steampipe.fixture.fixture_item WHERE category = 'software' AND price > 20
+  - name: greet_grace
+    reference_sql: SELECT message FROM steampipe.fixture.fixture_greeting WHERE name = 'Grace'
+  - name: lookup_item_seven
+    reference_sql: SELECT name FROM steampipe.fixture.fixture_lookup WHERE id = 7
+  - name: fixture_token
+    reference_sql: SELECT has_token FROM steampipe.fixture.fixture_whoami

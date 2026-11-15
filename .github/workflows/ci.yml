@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned together: the SQL test runner and the metadata checker must speak the
+  # same VGI protocol as the SDK. Template updates bump these (make template-diff).
+  HAYBARN_VERSION: "2.0.0rc11"
+  # cgo: the worker imports vgi-go/vgi/exprduckdb (embedded DuckDB) to re-apply
+  # pushed LIKE / expression filters exactly.
+  CGO_ENABLED: "1"
+
+jobs:
+  quality:
+    name: Lint + unit tests (Go ${{ matrix.go }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ["1.26", "stable"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+      - run: make lint
+      - run: make test-unit
+
+  integration:
+    name: SQL tests (${{ matrix.os }}, ${{ matrix.transport }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # macOS minutes cost 10x on private repos; add macos-latest here when you need it.
+        # No Windows lane: Steampipe plugins are published for Linux and macOS only.
+        os: [ubuntu-latest]
+        transport: [stdio, launch, http]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+      - name: Build the worker, the recipes and the fixture plugin
+        run: |
+          exe=""; [ "$RUNNER_OS" = "Windows" ] && exe=.exe
+          go build -o "bin/vgi-steampipe-worker$exe" ./cmd/vgi-steampipe-worker
+          go build -o "bin/recipes$exe" ./examples
+          (cd test/fixture-plugin && CGO_ENABLED=0 go build -o "../../bin/steampipe-plugin-fixture$exe" .)
+      - name: Install the SQL test runner
+        run: |
+          uv venv .tools
+          uv pip install -p .tools "haybarn-unittest==${HAYBARN_VERSION}"
+      - name: Run test/sql over ${{ matrix.transport }}
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then tools="$PWD/.tools/Scripts"; exe=.exe
+          else tools="$PWD/.tools/bin"; exe=""; fi
+          export WORKER="$PWD/bin/vgi-steampipe-worker$exe"
+          export HAYBARN_UNITTEST="$tools/haybarn-unittest$exe"
+          export RECIPES_WORKER="$PWD/bin/recipes$exe"
+          export FIXTURE_PLUGIN="$PWD/bin/steampipe-plugin-fixture$exe"
+          TRANSPORT=${{ matrix.transport }} PYTHON="uv run --no-project python" ci/run-integration.sh
+
+  metadata:
+    name: Metadata quality (vgi-lint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go build -o bin/vgi-steampipe-worker ./cmd/vgi-steampipe-worker
+      - run: cd test/fixture-plugin && CGO_ENABLED=0 go build -o ../../bin/steampipe-plugin-fixture .
+      - name: Read fail_on from vgi-lint.toml
+        id: lintcfg
+        run: python3 -c 'import tomllib; print("fail_on=" + tomllib.load(open("vgi-lint.toml", "rb")).get("fail_on", "error"))' >> "$GITHUB_OUTPUT"
+      - uses: Query-farm/vgi-lint-check@v2
+        with:
+          # The worker hosts the in-repo fixture plugin for ATTACHes that name no plugins
+          # (vgi-lint passes no ATTACH options), so every example runs offline.
+          location: ${{ github.workspace }}/bin/vgi-steampipe-worker --plugins fixture=${{ github.workspace }}/bin/steampipe-plugin-fixture
+          # Set in vgi-lint.toml, so local runs and CI agree.
+          fail-on: ${{ steps.lintcfg.outputs.fail_on }}
+          # Examples run against the fixture plugin: no credentials or network needed.
+          execute: true
+
+  docker:
+    name: Docker image smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t worker:ci .
+      - name: HTTP /health
+        run: |
+          docker run -d --name smoke -p 8000:8000 worker:ci
+          for _ in $(seq 1 30); do curl -fsS http://127.0.0.1:8000/health && exit 0; sleep 1; done
+          docker logs smoke; exit 1

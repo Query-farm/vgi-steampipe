@@ -1,0 +1,92 @@
+# name: test/sql/oci.test
+# description: Fetch a plugin image from an OCI registry (the offline mock registry), verify digests, reuse the cache
+# group: [steampipe]
+
+require vgi
+
+require-env STEAMPIPE_WORKER
+
+require-env STEAMPIPE_MOCK_REGISTRY
+
+require-env STEAMPIPE_FIXTURE_DIGEST
+
+require-env STEAMPIPE_CACHE_DIR
+
+# Short ref + Steampipe's @version syntax, resolved against the registry option.
+statement ok
+ATTACH 'steampipe' AS reg (TYPE vgi, LOCATION '{STEAMPIPE_WORKER}',
+    plugins 'fixture@1.0.0', registry '{STEAMPIPE_MOCK_REGISTRY}', cache_dir '{STEAMPIPE_CACHE_DIR}');
+
+query TTTT
+SELECT schema_name, plugin, plugin_version, image_digest = '{STEAMPIPE_FIXTURE_DIGEST}' FROM reg.main.plugin;
+----
+fixture	fixture	1.0.0	true
+
+query T
+SELECT ref FROM reg.main.plugin;
+----
+{STEAMPIPE_MOCK_REGISTRY}/turbot/steampipe/plugins/turbot/fixture:1.0.0
+
+query T
+SELECT binary_path LIKE '{STEAMPIPE_CACHE_DIR}/blobs/sha256/%' FROM reg.main.plugin;
+----
+true
+
+query I
+SELECT count(*) FROM reg.fixture.fixture_item WHERE id <= 5;
+----
+5
+
+statement ok
+DETACH reg;
+
+# Pinned by manifest digest, with a schema name of our choosing.
+statement ok
+ATTACH 'steampipe' AS pinned (TYPE vgi, LOCATION '{STEAMPIPE_WORKER}',
+    plugins 'items=fixture@{STEAMPIPE_FIXTURE_DIGEST}', registry '{STEAMPIPE_MOCK_REGISTRY}', cache_dir '{STEAMPIPE_CACHE_DIR}');
+
+query I
+SELECT count(*) FROM pinned.items.fixture_item;
+----
+25
+
+statement ok
+DETACH pinned;
+
+# A pinned digest is served from the cache: the registry is not contacted.
+statement ok
+ATTACH 'steampipe' AS offline (TYPE vgi, LOCATION '{STEAMPIPE_WORKER}',
+    plugins 'fixture@{STEAMPIPE_FIXTURE_DIGEST}', registry 'http://127.0.0.1:9', cache_dir '{STEAMPIPE_CACHE_DIR}');
+
+query I
+SELECT count(*) FROM offline.fixture.fixture_item;
+----
+25
+
+statement ok
+DETACH offline;
+
+# A digest the registry does not serve.
+statement error
+ATTACH 'steampipe' AS wrong (TYPE vgi, LOCATION '{STEAMPIPE_WORKER}',
+    plugins 'fixture@sha256:0000000000000000000000000000000000000000000000000000000000000000', registry '{STEAMPIPE_MOCK_REGISTRY}', cache_dir '{STEAMPIPE_CACHE_DIR}');
+----
+<REGEX>:.*HTTP 404.*
+
+# The layer blob does not match the digest in the manifest: nothing is installed.
+statement error
+ATTACH 'steampipe' AS tampered (TYPE vgi, LOCATION '{STEAMPIPE_WORKER}',
+    plugins 'fixture:tampered', registry '{STEAMPIPE_MOCK_REGISTRY}', cache_dir '{STEAMPIPE_CACHE_DIR}');
+----
+<REGEX>:.*layer digest mismatch.*
+
+statement error
+ATTACH 'steampipe' AS missing (TYPE vgi, LOCATION '{STEAMPIPE_WORKER}',
+    plugins 'fixture@9.9.9', registry '{STEAMPIPE_MOCK_REGISTRY}', cache_dir '{STEAMPIPE_CACHE_DIR}');
+----
+<REGEX>:.*no such plugin or version.*
+
+statement error
+ATTACH 'steampipe' AS badref (TYPE vgi, LOCATION '{STEAMPIPE_WORKER}', plugins 'fixture@sha256:abc');
+----
+<REGEX>:.*sha256: followed by 64.*

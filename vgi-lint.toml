@@ -1,0 +1,34 @@
+# vgi-lint settings for this worker: https://github.com/Query-farm/vgi-lint-check
+# `make lint-explain`, `vgi-lint lint` in this directory, and CI's metadata job all
+# read this file. Look up a rule with `vgi-lint explain VGI123`; print the metadata tag
+# contract with `vgi-lint spec`.
+
+# The worker to attach, relative to this directory. Build it first with `make build`.
+# --plugins makes the worker host the in-repo fixture plugin for ATTACHes that name none,
+# so the linter (which passes no ATTACH options) sees real plugin tables and runs examples.
+location = "bin/vgi-steampipe-worker --plugins fixture=bin/steampipe-plugin-fixture"
+
+# Gate at info: zero findings.
+fail_on = "info"
+
+# Waive a finding only with a kind and a reason, so the waiver can be audited:
+#   domain-exemption  permanent and legitimate for this worker
+#   deferred          a real defect you will fix; add expires = "YYYY-MM-DD"
+#   timing            slow or flaky because of the environment, not the metadata
+#   tooling-bug       the linter is wrong; report it upstream
+ignore = [
+  # { code = "VGI146", kind = "domain-exemption", reason = "every entry point needs a key" },
+]
+
+# Adopting the gate on a worker that already has findings? Record them once with
+#   vgi-lint lint --baseline vgi-lint-baseline --update-baseline
+# and uncomment the next line. Only new findings fail after that.
+# baseline = "vgi-lint-baseline"
+
+# Plugin schemas are generated per ATTACH from whatever the plugin reports. Steampipe
+# plugins declare no row identity, so the worker cannot attest a primary key for their
+# tables (the fixture plugin's tables stand in for every plugin here).
+[per_object."steampipe.fixture.*"]
+ignore = [
+  { code = "VGI807", kind = "domain-exemption", reason = "Steampipe plugin tables carry no primary-key metadata; the worker cannot attest one" },
+]
