@@ -27,7 +27,7 @@ func NewWorker(opts ...vgi.WorkerOption) *vgi.Worker {
 		vgi.WithCatalogComment(catalogComment),
 		vgi.WithCatalogTags(CatalogTags),
 		vgi.WithCatalogInfo(vgi.CatalogInfo{SourceURL: &sourceURL, ImplementationVersion: &version}),
-		vgi.WithSchemaComments(map[string]string{"main": SchemaDocMD}),
+		vgi.WithSchemaComments(map[string]string{"main": mainSchemaComment}),
 		vgi.WithSchemaTags(map[string]map[string]string{"main": schemaTags(allExamples())}),
 		vgi.WithSecretTypes(PluginSecretType),
 		vgi.WithAttachOptions(AttachOptionSpecs...),

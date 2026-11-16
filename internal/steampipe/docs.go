@@ -61,6 +61,9 @@ const schemaDocLLM = "The main schema describes and reads the plugins of the cur
 	"max_rows := 0) reads a plugin table directly; max_rows is Steampipe's plugin-side limit. Everything here reflects the " +
 	"current ATTACH, and is empty when it named no plugins."
 
+// mainSchemaComment is the main schema's one-line description.
+const mainSchemaComment = "Introspection of the hosted Steampipe plugins: their tables, required filters and pushed-down key columns."
+
 // SchemaDocMD is the main schema's human-facing description.
 const SchemaDocMD = "## main\n\n" +
 	"Introspection of the plugins this ATTACH hosts: what the `plugins` option resolved to, which tables exist, which filters " +
