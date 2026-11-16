@@ -1,6 +1,10 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.1.1
+
+- Catalog and schema docs are overviews instead of object lists, and schemas have their own one-line comments (vgi-lint 2.8: VGI173, VGI102).
+
+## 0.1.0
 
 First release: hosts Steampipe plugins (local binaries or OCI images from ghcr.io,
 digest-verified and cached) over the steampipe-plugin-sdk gRPC protocol. Each plugin
