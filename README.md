@@ -19,7 +19,7 @@ service) itself. There is no Steampipe CLI and no embedded Postgres; the plugin'
 tables become DuckDB tables.
 
 ```sql
-ATTACH 'steampipe' AS sp (TYPE vgi, LOCATION 'github-auto://Query-farm/vgi-steampipe@v0.1.1',
+ATTACH 'steampipe' AS sp (TYPE vgi, LOCATION 'github-auto://Query-farm/vgi-steampipe@v0.1.2',
     plugins 'csv@1.3.0, rss',
     config  'csv { paths = ["/data/*.csv"] }');
 
@@ -47,7 +47,7 @@ extension fetch it with `github-auto://` (change `@v0.1.0` to the release you wa
 INSTALL vgi FROM community;
 LOAD vgi;
 
-ATTACH 'steampipe' AS sp (TYPE vgi, LOCATION 'github-auto://Query-farm/vgi-steampipe@v0.1.1',
+ATTACH 'steampipe' AS sp (TYPE vgi, LOCATION 'github-auto://Query-farm/vgi-steampipe@v0.1.2',
     plugins 'csv', config 'csv { paths = ["/data/*.csv"] }');
 
 FROM sp.main.plugin;          -- what was attached
