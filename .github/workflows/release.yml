@@ -55,3 +55,41 @@ jobs:
       # The worker imports vgi-go/vgi/exprduckdb (embedded DuckDB): cgo.
       cgo: "1"
       version_check_cmd: ci/check-version.sh
+
+  # The Steampipe fixture plugin that the examples' vgi.executable_examples run
+  # against (test/fixture-plugin). Published with each release so a catalog
+  # harvest can ATTACH ... (plugins 'fixture=<path>') and verify the examples
+  # the way CI does. Test fixture only: not for production use.
+  fixture-plugin:
+    name: fixture plugin (${{ matrix.goos }}_${{ matrix.goarch }})
+    needs: [release]
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    strategy:
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: darwin, goarch: arm64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: test/fixture-plugin/go.mod
+      - name: Build
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          out="$RUNNER_TEMP/steampipe-plugin-fixture-${{ matrix.goos }}_${{ matrix.goarch }}"
+          (cd test/fixture-plugin && go build -trimpath -o "$out" .)
+          (cd "$RUNNER_TEMP" && sha256sum "$(basename "$out")" > "$(basename "$out").sha256")
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          f="$RUNNER_TEMP/steampipe-plugin-fixture-${{ matrix.goos }}_${{ matrix.goarch }}"
+          gh release upload "$GITHUB_REF_NAME" "$f" "$f.sha256" --clobber --repo "$GITHUB_REPOSITORY"

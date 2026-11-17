@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.3 (2026-11-17)
+
+- Releases also publish the test fixture plugin (`steampipe-plugin-fixture-<os>_<arch>`), so catalog harvests can run the executable examples the way CI does.
+
 ## 0.1.2 (2026-11-16)
 
 - Bump vgi-go to 0.42.2.
