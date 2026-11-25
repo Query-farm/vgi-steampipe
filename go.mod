@@ -5,21 +5,24 @@ go 1.26.0
 replace github.com/google/flatbuffers => github.com/rustyconover/flatbuffers v25.12.20-0.20261026151427-0acd09bcd1ff+incompatible
 
 require (
-	github.com/Query-farm/vgi-go v0.42.2
-	github.com/Query-farm/vgi-rpc-go v0.37.0
+	github.com/Query-farm/vgi-go v0.44.1
+	github.com/Query-farm/vgi-rpc-go v0.38.1
 	github.com/apache/arrow-go/v18 v18.7.0
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/go-plugin v1.6.1
 	github.com/hashicorp/hcl/v2 v2.20.1
 	github.com/turbot/steampipe-plugin-sdk/v5 v5.14.1
-	google.golang.org/grpc v1.82.0
+	google.golang.org/grpc v1.82.1
 	google.golang.org/protobuf v1.36.11
 	modernc.org/sqlite v1.56.0
 )
 
 require (
-	github.com/Query-farm-haybarn/haybarn-go-bindings v0.20000.0-rc.9 // indirect
-	github.com/Query-farm-haybarn/haybarn-go/v2 v2.20000.0-rc.9 // indirect
+	github.com/MicahParks/jwkset v0.11.3 // indirect
+	github.com/MicahParks/keyfunc/v3 v3.8.1 // indirect
+	github.com/Query-farm-haybarn/haybarn-go-bindings v0.20001.0-rc.3 // indirect
+	github.com/Query-farm-haybarn/haybarn-go/v2 v2.20001.0-rc.3 // indirect
+	github.com/Query-farm/vgi-rpc-go/vgirpc/jwtauth v0.17.1 // indirect
 	github.com/agext/levenshtein v1.2.3 // indirect
 	github.com/andybalholm/brotli v1.2.2 // indirect
 	github.com/apache/thrift v0.24.0 // indirect
@@ -29,6 +32,7 @@ require (
 	github.com/fatih/color v1.17.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/goccy/go-json v0.10.6 // indirect
+	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/flatbuffers v25.12.19+incompatible // indirect
 	github.com/google/uuid v1.6.0 // indirect
@@ -55,12 +59,13 @@ require (
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
+	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/tools v0.48.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260414002931-afd174a4e478 // indirect
-	haybarn-extensions.query.farm/go/libhaybarn/darwin-arm64 v0.20000.0-rc.9 // indirect
-	haybarn-extensions.query.farm/go/libhaybarn/linux-amd64 v0.20000.0-rc.9 // indirect
-	haybarn-extensions.query.farm/go/libhaybarn/linux-arm64 v0.20000.0-rc.9 // indirect
-	haybarn-extensions.query.farm/go/libhaybarn/windows-amd64 v0.20000.0-rc.9 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260715232425-e75dac1f907d // indirect
+	haybarn-extensions.query.farm/go/libhaybarn/darwin-arm64 v0.20001.0-rc.3 // indirect
+	haybarn-extensions.query.farm/go/libhaybarn/linux-amd64 v0.20001.0-rc.3 // indirect
+	haybarn-extensions.query.farm/go/libhaybarn/linux-arm64 v0.20001.0-rc.3 // indirect
+	haybarn-extensions.query.farm/go/libhaybarn/windows-amd64 v0.20001.0-rc.3 // indirect
 	modernc.org/libc v1.75.3 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.0 // indirect
